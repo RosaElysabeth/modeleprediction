@@ -6,6 +6,8 @@ from sklearn.svm import SVC
 from sklearn.impute import SimpleImputer
 import shap
 import time
+import matplotlib.pyplot as plt
+import io
 
 def load_model():
     start_time = time.time()  # Recording start time
@@ -21,10 +23,10 @@ def load_model():
     features = df.drop('Situation_Surpoids', axis=1)
     target = df['Situation_Surpoids']
     
-    # Encoding
+    # Encoding categorical features
     code = {'Acceptable(Normale)': 1, 'Précaire': 2, 'Alarmante(Alerte)': 3, 'Critique(Urgence)': 4}  
     for col in df.select_dtypes('object').columns:
-        df.loc[:, col] = df[col].replace(code)
+        df[col] = df[col].replace(code)
     
     # Imputing missing values for all columns with 'most_frequent' strategy
     imputer = SimpleImputer(strategy='most_frequent')
@@ -52,22 +54,19 @@ def load_model():
     elapsed_time = end_time - start_time
     print(f"Model loading time: {elapsed_time:.2f} seconds")
     
-    return food_security_model, explainer, X_train, y_train
+    return food_security_model, explainer, X_train
 
 def predict(model, features):
-    food_security_model = model
-    prediction = food_security_model.predict(features)[0]
-    return prediction
+    return model.predict(features)
 
-def calculate_shap(model, features):
-    _, explainer = model
+def calculate_shap(model_explainer, features):
+    model, explainer = model_explainer
     features = features.apply(pd.to_numeric, errors='coerce')
     
     # Calculating SHAP values
     shap_values = explainer.shap_values(features)
     
-    # print(shap_values)
-
+    # Return SHAP values
     return shap_values
 
 # Function to map region names to numeric values
@@ -98,56 +97,50 @@ def map_region_to_numeric(region_name):
         "atsimo-andrefana": 22,
         "androy": 23
     }
-
-    # Convert region to lowercase before looking in the dictionary
     region_name_lower = region_name.lower()
-
-    # Return the corresponding numeric value if it exists, otherwise return -1 or a default value
     return region_mapping.get(region_name_lower, -1)
 
 def interpret_shap(feature_names, shap_values, region_name):
     interpretations = []
-
-    if shap_values.ndim == 1:
+    if len(shap_values.shape) == 2:  # If shap_values is a 2D array (multiple features)
+        for i in range(shap_values.shape[1]):
+            feature_name = feature_names[i]
+            shap_value = shap_values[0, i]  # Use the first instance for explanation
+            interpretations.append(
+                f"For the region {region_name}, the value of the feature '{feature_name}' has an impact of {shap_value:.4f} on the prediction."
+            )
+    else:  # If shap_values is a 1D array (single feature)
         for i, val in enumerate(shap_values):
             feature_name = feature_names[i]
             interpretations.append(
                 f"For the region {region_name}, the value of the feature '{feature_name}' has an impact of {val:.4f} on the prediction."
             )
-    else:
-        interpretations.append(
-            f"For the region {region_name}, the value of the feature has multiple components and cannot be interpreted simply. The components are: {shap_value.tolist()}"
-        )
-
     return interpretations
 
 def main():
     st.title("Prediction of Phenomena")
 
     # Load the model
-    model, explainer, X_train, y_train = load_model()
+    model, explainer, X_train = load_model()
 
     # User interface to input features
     region_name = st.text_input("Enter the region:")
     region_numeric = map_region_to_numeric(region_name)
 
-    # Check if the region is valid
     if region_numeric == -1:
         st.warning("The entered region is not valid. Please enter a valid region.")
         return
 
     date = st.date_input("Enter the date:")
-
-    # Extract features from date
     year = date.year
     month = date.month
     day = date.day
 
     # Button to make the prediction
     if st.button("Predict"):
-        start_prediction_time = time.time()  # Record prediction start time
+        start_prediction_time = time.time()
 
-          # Preprocess features (excluding "Overweight_Situation")
+        # Preprocess features
         features1 = pd.DataFrame({
             "DATE": [year],
             "REGION": [region_numeric],
@@ -192,7 +185,9 @@ def main():
         })
         
         # Use X_train column names to ensure consistency
-        features1.columns = X_train.columns
+        features1 = features1.reindex(columns=X_train.columns)
+        features2 = features2.reindex(columns=X_train.columns)
+        features3 = features3.reindex(columns=X_train.columns)
 
         # Make predictions
         prediction1 = predict(model, features1)
@@ -204,41 +199,42 @@ def main():
         st.write(f"Prediction of Chronic Malnutrition: {prediction2}")
         st.write(f"Prediction of Acute Malnutrition: {prediction3}")
 
-        # Calculate and display SHAP values
+        prediction_time = time.time() - start_prediction_time
+        st.write(f"Prediction time: {prediction_time:.4f} seconds")
+
+        # Calculate SHAP values
         shap_values = calculate_shap((model, explainer), features1)
-        
-         # Record end time of prediction and calculate duration
-        end_prediction_time = time.time()
-        elapsed_prediction_time = end_prediction_time - start_prediction_time
-        print(f"Prediction time: {elapsed_prediction_time:.4f} seconds")
 
-        # Get descending order of feature indices by impact
-        feature_order = list(reversed(np.argsort(shap_values[0])))
-
-        print(f"Debug - Feature Order: {feature_order}")
-        
-        #SHAP Values
+        # Display SHAP values
         st.write("SHAP Values:")
-        st.write(f"{shap_values}")
+        st.write(shap_values)
 
-        # Display SHAP results with comments suitable for nutritionists
-
+        # Interpret SHAP values
         st.write("Interpretation of SHAP Values:")
+        feature_names = X_train.columns
 
-        feature_names = features1.columns 
-
-        for feature_index in feature_order[0]:
-            if 0 <= feature_index < len(shap_values[0]):
-                feature_name = feature_names[feature_index]  
+        for feature_index in range(len(feature_names)):
+            if feature_index < len(shap_values[0]):
+                feature_name = feature_names[feature_index]
                 shap_value = shap_values[0][feature_index]
 
-                print(f"Debug - Feature Index: {feature_index}, Feature Name: {feature_name}, SHAP Value Shape: {shap_value.shape}")
-
                 interpretation = interpret_shap(feature_names, shap_value, region_name)
-
                 st.write(interpretation)
 
-                print(f"Debug - All SHAP Values for {feature_name}:\n{shap_value}")
+        # Plot SHAP summary
+        st.write("SHAP Summary Plot:")
+        shap_plot_io = io.BytesIO()
+
+        # Adjust figsize to ensure the plot is fully visible
+        plt.figure(figsize=(2, 1))  
+        shap.summary_plot(shap_values, features1, plot_type="bar", show=False)
+        plt.title("This plot shows the importance of each feature for the model. Each point represents an instance in the dataset. Red points indicate high feature values, while blue points represent low feature values.", fontsize=12)
+        plt.savefig(shap_plot_io, format='png')
+        plt.close()
+
+        shap_plot_io.seek(0)
+        st.image(shap_plot_io, caption="SHAP Summary Plot")
+
 
 if __name__ == "__main__":
     main()
