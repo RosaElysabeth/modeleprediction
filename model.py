@@ -180,61 +180,61 @@ def main():
             "Taux_couverture_vaccinale_complete": [52],
             "Taille_moyenne_menages_Individus": [4],
             "Pourcentage_femmes_couvertes_assurance_maladie": [3],
-            "Pourcentage_membres_menages_toilettes_ameliorees": [6],
-            "Pourcentage_membres_menages_lieu_lavage_mains_eau_savon_detergent": [26]
+            "Pourcentage_membres_menages_toilettes_ameliorees": [23],
+            "Pourcentage_membres_menages_lieu_lavage_mains_eau_savon_detergent": [25]
         })
-        
-        # Use X_train column names to ensure consistency
-        features1 = features1.reindex(columns=X_train.columns)
-        features2 = features2.reindex(columns=X_train.columns)
-        features3 = features3.reindex(columns=X_train.columns)
 
-        # Make predictions
-        prediction1 = predict(model, features1)
-        prediction2 = predict(model, features2)
-        prediction3 = predict(model, features3)
-
-        # Display predictions
-        st.write(f"Prediction of Underweight: {prediction1}")
-        st.write(f"Prediction of Chronic Malnutrition: {prediction2}")
-        st.write(f"Prediction of Acute Malnutrition: {prediction3}")
-
-        prediction_time = time.time() - start_prediction_time
-        st.write(f"Prediction time: {prediction_time:.4f} seconds")
+        # Generate predictions
+        predictions1 = predict(model, features1)
+        predictions2 = predict(model, features2)
+        predictions3 = predict(model, features3)
 
         # Calculate SHAP values
-        shap_values = calculate_shap((model, explainer), features1)
+        shap_values1 = calculate_shap((model, explainer), features1)
+        shap_values2 = calculate_shap((model, explainer), features2)
+        shap_values3 = calculate_shap((model, explainer), features3)
 
-        # Display SHAP values
-        st.write("SHAP Values:")
-        st.write(shap_values)
+        # Interpretation of SHAP values
+        interpretations1 = interpret_shap(X_train.columns, shap_values1, region_name)
+        interpretations2 = interpret_shap(X_train.columns, shap_values2, region_name)
+        interpretations3 = interpret_shap(X_train.columns, shap_values3, region_name)
 
-        # Interpret SHAP values
-        st.write("Interpretation of SHAP Values:")
-        feature_names = X_train.columns
+        # End time for prediction
+        end_prediction_time = time.time()
+        prediction_duration = end_prediction_time - start_prediction_time
 
-        for feature_index in range(len(feature_names)):
-            if feature_index < len(shap_values[0]):
-                feature_name = feature_names[feature_index]
-                shap_value = shap_values[0][feature_index]
+        # Display predictions and SHAP interpretations
+        st.write(f"Prediction results for region {region_name} on {date}:")
+        st.write("Scenario 1:", predictions1)
+        st.write("Scenario 2:", predictions2)
+        st.write("Scenario 3:", predictions3)
+        st.write("Prediction time:", prediction_duration, "seconds")
 
-                interpretation = interpret_shap(feature_names, shap_value, region_name)
-                st.write(interpretation)
+        # Display SHAP interpretations
+        st.write("SHAP Interpretations for Scenario 1:")
+        for interpretation in interpretations1:
+            st.write(interpretation)
+        
+        st.write("SHAP Interpretations for Scenario 2:")
+        for interpretation in interpretations2:
+            st.write(interpretation)
+        
+        st.write("SHAP Interpretations for Scenario 3:")
+        for interpretation in interpretations3:
+            st.write(interpretation)
+        
+        # Visualizing SHAP values with matplotlib
+        shap.summary_plot(shap_values1, features1, feature_names=features1.columns)
+        plt.title("SHAP Summary Plot - Scenario 1")
+        st.pyplot(plt.gcf())
 
-        # Plot SHAP summary
-        st.write("SHAP Summary Plot:")
-        shap_plot_io = io.BytesIO()
+        shap.summary_plot(shap_values2, features2, feature_names=features2.columns)
+        plt.title("SHAP Summary Plot - Scenario 2")
+        st.pyplot(plt.gcf())
 
-        # Adjust figsize to ensure the plot is fully visible
-        plt.figure(figsize=(2, 1))  
-        shap.summary_plot(shap_values, features1, plot_type="bar", show=False)
-        plt.title("This plot shows the importance of each feature for the model. Each point represents an instance in the dataset. Red points indicate high feature values, while blue points represent low feature values.", fontsize=12)
-        plt.savefig(shap_plot_io, format='png')
-        plt.close()
-
-        shap_plot_io.seek(0)
-        st.image(shap_plot_io, caption="SHAP Summary Plot")
-
+        shap.summary_plot(shap_values3, features3, feature_names=features3.columns)
+        plt.title("SHAP Summary Plot - Scenario 3")
+        st.pyplot(plt.gcf())
 
 if __name__ == "__main__":
     main()
