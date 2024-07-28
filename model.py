@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.impute import SimpleImputer
@@ -180,61 +181,69 @@ def main():
             "Taux_couverture_vaccinale_complete": [52],
             "Taille_moyenne_menages_Individus": [4],
             "Pourcentage_femmes_couvertes_assurance_maladie": [3],
-            "Pourcentage_membres_menages_toilettes_ameliorees": [23],
-            "Pourcentage_membres_menages_lieu_lavage_mains_eau_savon_detergent": [25]
+            "Pourcentage_membres_menages_toilettes_ameliorees": [6],
+            "Pourcentage_membres_menages_lieu_lavage_mains_eau_savon_detergent": [26]
         })
+        
+        # Use X_train column names to ensure consistency
+        features1 = features1.reindex(columns=X_train.columns)
+        features2 = features2.reindex(columns=X_train.columns)
+        features3 = features3.reindex(columns=X_train.columns)
 
-        # Generate predictions
-        predictions1 = predict(model, features1)
-        predictions2 = predict(model, features2)
-        predictions3 = predict(model, features3)
+        # Make predictions
+        prediction1 = predict(model, features1)
+        prediction2 = predict(model, features2)
+        prediction3 = predict(model, features3)
+
+        # Display predictions
+        st.write(f"Prediction of Underweight: {prediction1}")
+        st.write(f"Prediction of Chronic Malnutrition: {prediction2}")
+        st.write(f"Prediction of Acute Malnutrition: {prediction3}")
+
+        prediction_time = time.time() - start_prediction_time
+        st.write(f"Prediction time: {prediction_time:.4f} seconds")
 
         # Calculate SHAP values
-        shap_values1 = calculate_shap((model, explainer), features1)
-        shap_values2 = calculate_shap((model, explainer), features2)
-        shap_values3 = calculate_shap((model, explainer), features3)
+        shap_values = calculate_shap((model, explainer), features1)
 
-        # Interpretation of SHAP values
-        interpretations1 = interpret_shap(X_train.columns, shap_values1, region_name)
-        interpretations2 = interpret_shap(X_train.columns, shap_values2, region_name)
-        interpretations3 = interpret_shap(X_train.columns, shap_values3, region_name)
+        # Display SHAP values
+        st.write("SHAP Values:")
+        st.write(shap_values)
 
-        # End time for prediction
-        end_prediction_time = time.time()
-        prediction_duration = end_prediction_time - start_prediction_time
+        # Interpret SHAP values
+        st.write("Interpretation of SHAP Values:")
+        feature_names = X_train.columns
 
-        # Display predictions and SHAP interpretations
-        st.write(f"Prediction results for region {region_name} on {date}:")
-        st.write("Scenario 1:", predictions1)
-        st.write("Scenario 2:", predictions2)
-        st.write("Scenario 3:", predictions3)
-        st.write("Prediction time:", prediction_duration, "seconds")
+        for feature_index in range(len(feature_names)):
+            if feature_index < len(shap_values[0]):
+                feature_name = feature_names[feature_index]
+                shap_value = shap_values[0][feature_index]
 
-        # Display SHAP interpretations
-        st.write("SHAP Interpretations for Scenario 1:")
-        for interpretation in interpretations1:
-            st.write(interpretation)
-        
-        st.write("SHAP Interpretations for Scenario 2:")
-        for interpretation in interpretations2:
-            st.write(interpretation)
-        
-        st.write("SHAP Interpretations for Scenario 3:")
-        for interpretation in interpretations3:
-            st.write(interpretation)
-        
-        # Visualizing SHAP values with matplotlib
-        shap.summary_plot(shap_values1, features1, feature_names=features1.columns)
-        plt.title("SHAP Summary Plot - Scenario 1")
-        st.pyplot(plt.gcf())
+                interpretation = interpret_shap(feature_names, shap_value, region_name)
+                st.write(interpretation)
 
-        shap.summary_plot(shap_values2, features2, feature_names=features2.columns)
-        plt.title("SHAP Summary Plot - Scenario 2")
-        st.pyplot(plt.gcf())
+     # Plot SHAP heatmap
+        st.write("SHAP Heatmap:")
+        shap_plot_io = io.BytesIO()
 
-        shap.summary_plot(shap_values3, features3, feature_names=features3.columns)
-        plt.title("SHAP Summary Plot - Scenario 3")
-        st.pyplot(plt.gcf())
+        # Flatten the SHAP values if needed
+        shap_values_flat = np.array(shap_values).reshape(-1, len(features1.columns))
+
+        # Create the heatmap plot
+        plt.figure(figsize=(12, 8))  # Adjust the figure size as needed
+        shap_values_df = pd.DataFrame(shap_values_flat, columns=features1.columns)
+        sns.heatmap(shap_values_df, annot=True, cmap="coolwarm", cbar=True)
+        plt.title("SHAP Heatmap showing the impact of each feature on the model's predictions.", fontsize=12)
+        plt.xticks(rotation=45, ha='right')  # Rotate x-axis labels if necessary
+
+        # Adjust layout to ensure everything fits
+        plt.tight_layout()
+
+        plt.savefig(shap_plot_io, format='png')
+        plt.close()
+
+        shap_plot_io.seek(0)
+        st.image(shap_plot_io, caption="SHAP Heatmap")
 
 if __name__ == "__main__":
     main()
